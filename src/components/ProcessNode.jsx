@@ -29,6 +29,11 @@ export default function ProcessNode({ data, selected }) {
       </div>
       <div className="node__title">{data.name || 'Senza nome'}</div>
       {data.subtitle && <div className="node__subtitle">{data.subtitle}</div>}
+      {data.frameId && (
+        <div className="node__drill" title="Doppio click per aprire il sotto-diagramma">
+          ⤵ decomposto
+        </div>
+      )}
 
       {handles.map(([id, h]) => {
         const pos = SIDE_TO_POSITION[h.side];

@@ -6,7 +6,7 @@ import { NODE_TYPES, EDGE_TYPES, COMMON_ENTITY_FIELDS } from '../model/schema.js
  * Mostra i "campi noti" derivati dallo standard + campi liberi arbitrari,
  * così ogni entità è totalmente personalizzabile.
  */
-export default function Inspector({ selection, onChange, onDelete }) {
+export default function Inspector({ selection, onChange, onDelete, onEnter }) {
   const [newKey, setNewKey] = useState('');
 
   if (!selection) {
@@ -85,6 +85,12 @@ export default function Inspector({ selection, onChange, onDelete }) {
         <FieldEditor key={k} field={{ key: k, label: k, type: 'text' }}
           value={meta[k]} onChange={(v) => setMeta(k, v)} />
       ))}
+
+      {!isEdge && typeKey === 'process' && onEnter && (
+        <button className="btn btn--enter" onClick={onEnter}>
+          ⤵ {entity.data.frameId ? 'Apri decomposizione' : 'Crea sotto-diagramma'}
+        </button>
+      )}
 
       <div className="inspector__addfield">
         <input placeholder="nuovo_campo" value={newKey}

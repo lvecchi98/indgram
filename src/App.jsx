@@ -1,203 +1,213 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ReactFlow, Background, Controls, MiniMap,
-  addEdge, applyNodeChanges, applyEdgeChanges,
-  useReactFlow, MarkerType,
+  applyNodeChanges, applyEdgeChanges, useReactFlow, MarkerType,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-import ProcessNode from './components/ProcessNode.jsx';
+import { nodeTypes } from './components/nodes.jsx';
 import Inspector from './components/Inspector.jsx';
 import Toolbar from './components/Toolbar.jsx';
-import Breadcrumb from './components/Breadcrumb.jsx';
-import SearchPanel from './components/SearchPanel.jsx';
-import { NODE_TYPES, EDGE_TYPES, SCHEMA_VERSION } from './model/schema.js';
-import { sampleDoc } from './data/sample.js';
-import { ROOT_FRAME, emptyDoc, makeFrameId, framePath, pruneFrame } from './model/doc.js';
+import ViewBar from './components/ViewBar.jsx';
+import RegistryPanel from './components/RegistryPanel.jsx';
+import OperationForm from './components/OperationForm.jsx';
 
-const nodeTypes = { entity: ProcessNode };
-let idSeq = 1;
-const nextId = (prefix) => `${prefix}-${Date.now().toString(36)}-${idSeq++}`;
-const DEFAULT_EDGE_TYPE = 'material';
+import { ENTITY_DEFS, OPERATION_DEF, MODEL_VERSION, emptyModel, uid, getEntity, entityLabel } from './model/model.js';
+import { graphForView } from './model/graph.js';
+import { layoutGraph } from './model/layout.js';
+import { sampleModel } from './data/sampleModel.js';
 
-function styleEdge(edge) {
-  const def = EDGE_TYPES[edge.data?.typeKey] || EDGE_TYPES[DEFAULT_EDGE_TYPE];
-  return {
-    ...edge,
-    type: 'smoothstep',
-    animated: def.animated,
-    label: def.label,
-    style: { stroke: def.color, strokeWidth: 2 },
-    labelStyle: { fill: def.color, fontSize: 10, fontWeight: 600 },
-    labelBgStyle: { fill: '#ffffff', fillOpacity: 0.85 },
-    markerEnd: { type: MarkerType.ArrowClosed, color: def.color },
-  };
+/** Costruisce nodi/archi React Flow (con layout e badge) per la vista. */
+function buildFlow(model, view, target) {
+  const graph = graphForView(model, view, target);
+  const pos = layoutGraph(graph);
+
+  const nodes = graph.nodes.map((n) => {
+    const p = pos.get(n.id) || { x: 0, y: 0 };
+    if (n.kind === 'operation') {
+      const op = model.operations.find((o) => o.id === n.refId);
+      return { id: n.id, type: 'operation', position: p,
+        data: { kind: 'operation', refId: n.refId, label: n.label,
+          processType: op?.processType, badges: opBadges(model, op) } };
+    }
+    return { id: n.id, type: 'material', position: p,
+      data: { kind: 'material', refId: n.refId, label: n.label, sublabel: n.sublabel, role: n.role } };
+  });
+
+  const edges = graph.edges.map((e) => {
+    const c = getEntity(model, 'component', e.componentId);
+    const code = c?.meta?.code || c?.name || '';
+    return { id: e.id, source: e.source, target: e.target, type: 'smoothstep',
+      label: code, animated: e.source.startsWith('op:') && e.target.startsWith('op:'),
+      style: { stroke: ENTITY_DEFS.component.color, strokeWidth: 2 },
+      labelStyle: { fontSize: 10, fontWeight: 600, fill: '#047857' },
+      labelBgStyle: { fill: '#fff', fillOpacity: 0.85 },
+      markerEnd: { type: MarkerType.ArrowClosed, color: ENTITY_DEFS.component.color } };
+  });
+
+  return { nodes, edges };
 }
 
-/** Accetta sia il nuovo formato a frame sia il vecchio formato piatto. */
-function normalizeDoc(raw) {
-  if (raw?.frames) return raw;
-  if (raw?.nodes) {
-    return { version: raw.version || SCHEMA_VERSION, title: raw.title || 'Diagramma',
-      frames: { [ROOT_FRAME]: { nodes: raw.nodes, edges: raw.edges || [] } } };
-  }
-  return emptyDoc();
+function opBadges(model, op) {
+  if (!op) return [];
+  const b = [];
+  if (op.equipmentId) b.push({ icon: '🏭', text: codeOf(model, 'equipment', op.equipmentId), color: ENTITY_DEFS.equipment.color, title: 'Impianto' });
+  for (const t of op.tooling || []) if (t.toolingId)
+    b.push({ icon: '🔧', text: codeOf(model, 'tooling', t.toolingId) + ((t.serials || []).length ? ` ×${t.serials.length}` : ''), color: ENTITY_DEFS.tooling.color, title: 'Attrezzatura' });
+  if ((op.operatorIds || []).length) b.push({ icon: '👤', text: String(op.operatorIds.length), color: ENTITY_DEFS.operator.color, title: 'Operatori' });
+  if (op.areaId) b.push({ icon: '📍', text: codeOf(model, 'area', op.areaId), color: ENTITY_DEFS.area.color, title: 'Area' });
+  return b;
 }
+const codeOf = (model, kind, id) => getEntity(model, kind, id)?.meta?.code || getEntity(model, kind, id)?.name || '?';
 
 export default function App() {
-  const [doc, setDoc] = useState(sampleDoc);
-  const [frameId, setFrameId] = useState(ROOT_FRAME);
+  const [model, setModel] = useState(sampleModel);
+  const [view, setView] = useState('flow');
+  const [target, setTarget] = useState('');
   const [selection, setSelection] = useState(null);
-  const { screenToFlowPosition, fitView, setCenter } = useReactFlow();
+  const [form, setForm] = useState(null); // { editId } | { } | null
+  const [rfNodes, setRfNodes] = useState([]);
+  const [rfEdges, setRfEdges] = useState([]);
+  const { fitView } = useReactFlow();
+  const fitRef = useRef();
 
-  const frame = doc.frames[frameId] || { nodes: [], edges: [] };
-  const nodes = frame.nodes;
-  const styledEdges = useMemo(() => frame.edges.map(styleEdge), [frame.edges]);
-  const path = useMemo(() => framePath(doc, frameId), [doc, frameId]);
+  useEffect(() => {
+    const { nodes, edges } = buildFlow(model, view, target);
+    setRfNodes(nodes);
+    setRfEdges(edges);
+    clearTimeout(fitRef.current);
+    fitRef.current = setTimeout(() => fitView({ padding: 0.2, duration: 300 }), 40);
+  }, [model, view, target, fitView]);
 
-  // Aggiorna il frame corrente in modo immutabile.
-  const updateFrame = useCallback((mutator) => {
-    setDoc((d) => {
-      const f = d.frames[frameId] || { nodes: [], edges: [] };
-      return { ...d, frames: { ...d.frames, [frameId]: mutator(f) } };
+  const onNodesChange = useCallback((c) => setRfNodes((n) => applyNodeChanges(c, n)), []);
+  const onEdgesChange = useCallback((c) => setRfEdges((e) => applyEdgeChanges(c, e)), []);
+
+  // ---- Entità ----
+  const createEntity = useCallback((kind, name) => {
+    const id = uid(kind);
+    setModel((m) => {
+      const count = Object.keys(m.entities[kind]).length + 1;
+      const code = `${ENTITY_DEFS[kind].prefix}${String(count).padStart(3, '0')}`;
+      return { ...m, entities: { ...m.entities, [kind]: { ...m.entities[kind], [id]: { id, name, meta: { code } } } } };
     });
-  }, [frameId]);
+    return id;
+  }, []);
 
-  const onNodesChange = useCallback((c) =>
-    updateFrame((f) => ({ ...f, nodes: applyNodeChanges(c, f.nodes) })), [updateFrame]);
-  const onEdgesChange = useCallback((c) =>
-    updateFrame((f) => ({ ...f, edges: applyEdgeChanges(c, f.edges) })), [updateFrame]);
+  const changeEntity = useCallback((kind, id, patch) => {
+    setModel((m) => ({ ...m, entities: { ...m.entities, [kind]: { ...m.entities[kind], [id]: { ...m.entities[kind][id], ...patch } } } }));
+  }, []);
 
-  const onConnect = useCallback((params) => {
-    const edge = { ...params, id: nextId('e'), data: { typeKey: DEFAULT_EDGE_TYPE, meta: {} } };
-    updateFrame((f) => ({ ...f, edges: addEdge(edge, f.edges) }));
-  }, [updateFrame]);
-
-  const addNode = useCallback((typeKey) => {
-    const def = NODE_TYPES[typeKey];
-    const pos = screenToFlowPosition({ x: window.innerWidth / 2 - 180, y: window.innerHeight / 2 });
-    const node = { id: nextId(typeKey), type: 'entity',
-      position: { x: pos.x + Math.random() * 60, y: pos.y + Math.random() * 60 },
-      data: { typeKey, name: def.short, meta: {} } };
-    updateFrame((f) => ({ ...f, nodes: [...f.nodes, node] }));
-    setSelection({ kind: 'node', data: node });
-  }, [screenToFlowPosition, updateFrame]);
-
-  // Drill-down: apre (o crea) la decomposizione di un processo.
-  const enterNode = useCallback((node) => {
-    if (node.data.typeKey !== 'process') return;
-    let childId = node.data.frameId;
-    if (childId && doc.frames[childId]) { setFrameId(childId); setSelection(null); return; }
-    childId = makeFrameId();
-    setDoc((d) => {
-      const f = d.frames[frameId];
-      const nodes = f.nodes.map((n) => n.id === node.id
-        ? { ...n, data: { ...n.data, frameId: childId, subtitle: (n.data.subtitle || '') } } : n);
-      return { ...d, frames: { ...d.frames, [frameId]: { ...f, nodes },
-        [childId]: { nodes: [], edges: [] } } };
+  const deleteEntity = useCallback((kind, id) => {
+    const ent = getEntity(model, kind, id);
+    if (!confirm(`Eliminare ${entityLabel(ent)}? Verrà rimossa anche dalle operazioni che la usano.`)) return;
+    setModel((m) => {
+      const kindMap = { ...m.entities[kind] };
+      delete kindMap[id];
+      const operations = m.operations.map((op) => cleanOpRefs(op, kind, id));
+      return { ...m, entities: { ...m.entities, [kind]: kindMap }, operations };
     });
-    setFrameId(childId); setSelection(null);
-  }, [doc.frames, frameId]);
-
-  const applyChange = useCallback((updated) => {
-    updateFrame((f) => selection?.kind === 'node'
-      ? { ...f, nodes: f.nodes.map((n) => (n.id === updated.id ? { ...n, data: updated.data } : n)) }
-      : { ...f, edges: f.edges.map((e) => (e.id === updated.id ? { ...e, data: updated.data } : e)) });
-    setSelection((s) => (s ? { ...s, data: updated } : s));
-  }, [selection, updateFrame]);
-
-  const deleteSelection = useCallback((sel) => {
-    if (sel.kind === 'node') {
-      const child = sel.data.data?.frameId;
-      setDoc((d) => {
-        let nd = child ? pruneFrame(d, child) : d;
-        const f = nd.frames[frameId];
-        return { ...nd, frames: { ...nd.frames, [frameId]: {
-          nodes: f.nodes.filter((n) => n.id !== sel.data.id),
-          edges: f.edges.filter((e) => e.source !== sel.data.id && e.target !== sel.data.id),
-        } } };
-      });
-    } else {
-      updateFrame((f) => ({ ...f, edges: f.edges.filter((e) => e.id !== sel.data.id) }));
-    }
     setSelection(null);
-  }, [frameId, updateFrame]);
+  }, [model]);
 
-  const gotoNode = useCallback((targetFrame, nodeId) => {
-    setFrameId(targetFrame);
-    setTimeout(() => {
-      const f = doc.frames[targetFrame];
-      const n = f?.nodes.find((x) => x.id === nodeId);
-      if (n) { setSelection({ kind: 'node', data: n }); setCenter(n.position.x + 90, n.position.y + 40, { zoom: 1.1, duration: 400 }); }
-    }, 30);
-  }, [doc.frames, setCenter]);
+  // ---- Operazioni ----
+  const saveOperation = useCallback((op) => {
+    setModel((m) => {
+      if (form?.editId) {
+        return { ...m, operations: m.operations.map((o) => (o.id === form.editId ? { ...op, id: form.editId } : o)) };
+      }
+      return { ...m, operations: [...m.operations, { ...op, id: uid('op') }] };
+    });
+    setForm(null);
+  }, [form]);
 
+  const deleteOperation = useCallback((id) => {
+    if (!confirm('Eliminare questa operazione?')) return;
+    setModel((m) => ({ ...m, operations: m.operations.filter((o) => o.id !== id) }));
+    setSelection(null);
+  }, []);
+
+  // ---- Selezione ----
+  const onNodeClick = useCallback((_, node) => {
+    if (node.data.kind === 'operation') setSelection({ type: 'operation', id: node.data.refId });
+    else setSelection({ type: 'entity', kind: 'component', id: node.data.refId });
+  }, []);
+
+  const selectRegistry = useCallback((type, kind, id) => setSelection({ type, kind, id }), []);
+  const focusEntity = useCallback((kind, id) => setSelection({ type: 'entity', kind, id }), []);
+
+  // ---- File ----
   const exportJson = useCallback(() => {
-    const out = { version: SCHEMA_VERSION, title: doc.title,
-      frames: Object.fromEntries(Object.entries(doc.frames).map(([fid, f]) => [fid, {
-        nodes: f.nodes.map(({ id, type, position, data }) => ({ id, type, position, data })),
-        edges: f.edges.map(({ id, source, target, sourceHandle, targetHandle, data }) =>
-          ({ id, source, target, sourceHandle, targetHandle, data })),
-      }])) };
-    const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify({ ...model, version: MODEL_VERSION }, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `${(doc.title || 'diagramma').replace(/\s+/g, '_')}.json`; a.click();
+    const a = document.createElement('a'); a.href = url;
+    a.download = `${(model.title || 'processo').replace(/\s+/g, '_')}.json`; a.click();
     URL.revokeObjectURL(url);
-  }, [doc]);
+  }, [model]);
 
   const importJson = useCallback((file) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const parsed = normalizeDoc(JSON.parse(reader.result));
-        setDoc(parsed); setFrameId(ROOT_FRAME); setSelection(null);
-        setTimeout(() => fitView({ padding: 0.2 }), 50);
-      } catch (err) { alert('File JSON non valido: ' + err.message); }
-    };
-    reader.readAsText(file);
-  }, [fitView]);
+    const r = new FileReader();
+    r.onload = () => { try {
+      const parsed = JSON.parse(r.result);
+      if (!parsed.entities || !parsed.operations) throw new Error('Struttura non riconosciuta');
+      setModel(parsed); setView('flow'); setTarget(''); setSelection(null);
+    } catch (e) { alert('File non valido: ' + e.message); } };
+    r.readAsText(file);
+  }, []);
 
-  const loadSample = useCallback(() => {
-    setDoc(sampleDoc); setFrameId(ROOT_FRAME); setSelection(null);
-    setTimeout(() => fitView({ padding: 0.2 }), 50);
-  }, [fitView]);
-
-  const clearAll = useCallback(() => {
-    if (!confirm('Svuotare tutto il documento?')) return;
-    setDoc(emptyDoc(doc.title)); setFrameId(ROOT_FRAME); setSelection(null);
-  }, [doc.title]);
-
-  const setTitle = useCallback((t) => setDoc((d) => ({ ...d, title: t })), []);
-  const minimapColor = useCallback((n) => NODE_TYPES[n.data?.typeKey]?.color || '#94a3b8', []);
+  const onView = useCallback((v) => { setView(v); if (v === 'flow') setTarget(''); }, []);
 
   return (
     <div className="app">
-      <Toolbar title={doc.title} onTitle={setTitle} onAddNode={addNode}
-        onExport={exportJson} onImport={importJson} onLoadSample={loadSample} onClear={clearAll} />
+      <Toolbar title={model.title} onTitle={(t) => setModel((m) => ({ ...m, title: t }))}
+        onNewOperation={() => setForm({})} onExport={exportJson} onImport={importJson}
+        onLoadSample={() => { setModel(sampleModel); setView('flow'); setTarget(''); setSelection(null); }}
+        onClear={() => { if (confirm('Svuotare tutto?')) { setModel(emptyModel(model.title)); setSelection(null); } }} />
+
       <div className="app__body">
-        <aside className="app__left">
-          <SearchPanel doc={doc} onGoto={gotoNode} />
-        </aside>
-        <div className="app__canvas">
-          <Breadcrumb path={path} onNavigate={(fid) => { setFrameId(fid); setSelection(null); }} />
-          <ReactFlow
-            nodes={nodes} edges={styledEdges} nodeTypes={nodeTypes}
-            onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect}
-            onNodeClick={(_, n) => setSelection({ kind: 'node', data: n })}
-            onNodeDoubleClick={(_, n) => enterNode(n)}
-            onEdgeClick={(_, e) => setSelection({ kind: 'edge', data: e })}
-            onPaneClick={() => setSelection(null)}
-            fitView defaultEdgeOptions={{ type: 'smoothstep' }}
-          >
-            <Background gap={16} color="#e2e8f0" />
-            <Controls />
-            <MiniMap nodeColor={minimapColor} pannable zoomable />
-          </ReactFlow>
+        <RegistryPanel model={model} selection={selection} onSelect={selectRegistry} onCreate={createEntity} />
+
+        <div className="app__center">
+          <ViewBar view={view} target={target} onView={onView} onTarget={setTarget} model={model} />
+          <div className="app__canvas">
+            {needsTarget(view, target)
+              ? <div className="canvas-hint">Seleziona un {ENTITY_DEFS[targetKind(view)]?.short.toLowerCase()} nel menù in alto per proiettare la vista.</div>
+              : <ReactFlow nodes={rfNodes} edges={rfEdges} nodeTypes={nodeTypes}
+                  onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
+                  onNodeClick={onNodeClick} onPaneClick={() => setSelection(null)}
+                  nodesConnectable={false} fitView proOptions={{ hideAttribution: true }}>
+                  <Background gap={16} color="#e2e8f0" />
+                  <Controls />
+                  <MiniMap zoomable pannable
+                    nodeColor={(n) => n.type === 'operation' ? OPERATION_DEF.color : ENTITY_DEFS.component.color} />
+                </ReactFlow>}
+          </div>
         </div>
-        <Inspector selection={selection} onChange={applyChange} onDelete={deleteSelection}
-          onEnter={selection?.kind === 'node' ? () => enterNode(selection.data) : null} />
+
+        <Inspector selection={selection} model={model}
+          onEditOperation={(id) => setForm({ editId: id })} onDeleteOperation={deleteOperation}
+          onChangeEntity={changeEntity} onDeleteEntity={deleteEntity} onFocusEntity={focusEntity} />
       </div>
+
+      {form && <OperationForm model={model} onCreateEntity={createEntity}
+        initial={form.editId ? model.operations.find((o) => o.id === form.editId) : null}
+        onSave={saveOperation} onCancel={() => setForm(null)} />}
     </div>
   );
+}
+
+const targetKind = (view) => ({ component: 'component', equipment: 'equipment', tooling: 'tooling', operator: 'operator', area: 'area' }[view]);
+const needsTarget = (view, target) => view !== 'flow' && !target;
+
+/** Rimuove i riferimenti a un'entità eliminata dalle operazioni. */
+function cleanOpRefs(op, kind, id) {
+  const o = { ...op };
+  if (kind === 'component') {
+    o.inputs = (o.inputs || []).filter((r) => r.componentId !== id);
+    o.outputs = (o.outputs || []).filter((r) => r.componentId !== id);
+  }
+  if (kind === 'equipment' && o.equipmentId === id) o.equipmentId = '';
+  if (kind === 'area' && o.areaId === id) o.areaId = '';
+  if (kind === 'tooling') o.tooling = (o.tooling || []).filter((t) => t.toolingId !== id);
+  if (kind === 'operator') o.operatorIds = (o.operatorIds || []).filter((x) => x !== id);
+  return o;
 }

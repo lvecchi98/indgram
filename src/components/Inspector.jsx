@@ -1,163 +1,126 @@
 import React, { useState } from 'react';
-import { NODE_TYPES, EDGE_TYPES, COMMON_ENTITY_FIELDS } from '../model/schema.js';
+import { ENTITY_DEFS, OPERATION_DEF, OPERATION_FIELDS, getEntity, entityLabel } from '../model/model.js';
 
 /**
- * Pannello laterale che edita i metadati dell'entità selezionata (nodo o arco).
- * Mostra i "campi noti" derivati dallo standard + campi liberi arbitrari,
- * così ogni entità è totalmente personalizzabile.
+ * Pannello dei dettagli. Mostra i metadati "viventi" dell'entità selezionata
+ * (componente, impianto, attrezzatura, operatore, area) oppure il riepilogo
+ * di un'operazione, con azioni di modifica/eliminazione.
  */
-export default function Inspector({ selection, onChange, onDelete, onEnter }) {
-  const [newKey, setNewKey] = useState('');
-
+export default function Inspector({ selection, model, onEditOperation, onDeleteOperation,
+  onChangeEntity, onDeleteEntity, onFocusEntity }) {
   if (!selection) {
-    return (
-      <aside className="inspector inspector--empty">
-        <p>Seleziona un nodo o un collegamento per vederne e modificarne i metadati.</p>
-        <p className="hint">Doppio click sul canvas non è necessario: usa la palette a
-          sinistra per aggiungere entità, poi trascina dai bordi per collegarle.</p>
-      </aside>
-    );
+    return <aside className="inspector inspector--empty">
+      <p>Seleziona un nodo per vederne i metadati.</p>
+      <p className="hint">Usa <b>➕ Nuova operazione</b> per aggiungere un passo di processo:
+        scegli input, output, impianto, attrezzature e operatori da menù. Il diagramma si
+        genera da solo. Cambia <b>vista</b> in alto per filtrare per componente, impianto o attrezzatura.</p>
+    </aside>;
   }
 
-  const isEdge = selection.kind === 'edge';
-  const entity = selection.data;
-  const typeKey = entity.data.typeKey;
-  const def = isEdge ? EDGE_TYPES[typeKey] : NODE_TYPES[typeKey];
-  const fields = def?.fields || [];
-  const meta = entity.data.meta || {};
+  if (selection.type === 'operation') {
+    return <OperationInspector op={model.operations.find((o) => o.id === selection.id)}
+      model={model} onEdit={onEditOperation} onDelete={onDeleteOperation} onFocusEntity={onFocusEntity} />;
+  }
+  return <EntityInspector kind={selection.kind} id={selection.id} model={model}
+    onChange={onChangeEntity} onDelete={onDeleteEntity} />;
+}
 
-  const setMeta = (key, value) => {
-    onChange({ ...entity, data: { ...entity.data, meta: { ...meta, [key]: value } } });
-  };
-  const setName = (value) => {
-    onChange({ ...entity, data: { ...entity.data, name: value } });
-  };
-  const setTypeKey = (value) => {
-    onChange({ ...entity, data: { ...entity.data, typeKey: value } });
-  };
-
-  const knownKeys = new Set([...fields, ...COMMON_ENTITY_FIELDS].map((f) => f.key));
-  const extraKeys = Object.keys(meta).filter((k) => !knownKeys.has(k));
-
-  const addField = () => {
-    const k = newKey.trim();
-    if (!k) return;
-    setMeta(k, '');
-    setNewKey('');
-  };
+function OperationInspector({ op, model, onEdit, onDelete, onFocusEntity }) {
+  if (!op) return <aside className="inspector inspector--empty"><p>Operazione non trovata.</p></aside>;
+  const compLabel = (id) => entityLabel(getEntity(model, 'component', id));
+  const line = (label, val) => val ? <div className="kv"><span>{label}</span><b>{val}</b></div> : null;
+  const chip = (kind, id) => id
+    ? <button className="reflink" style={{ '--c': ENTITY_DEFS[kind].color }}
+        onClick={() => onFocusEntity(kind, id)}>{ENTITY_DEFS[kind].icon} {entityLabel(getEntity(model, kind, id))}</button>
+    : null;
 
   return (
     <aside className="inspector">
-      <div className="inspector__head" style={{ '--node-color': def?.color }}>
-        <span className="inspector__badge">{isEdge ? 'Collegamento' : 'Nodo'}</span>
-        <strong>{def?.label}</strong>
-        <small className="inspector__std">📚 {def?.standard}</small>
+      <div className="inspector__head" style={{ '--node-color': OPERATION_DEF.color }}>
+        <span className="inspector__badge">Operazione</span>
+        <strong>{op.name}</strong>
+        <small className="inspector__std">{op.processType} · 📚 {OPERATION_DEF.standard}</small>
       </div>
 
-      {!isEdge && (
-        <label className="field">
-          <span>Nome</span>
-          <input value={entity.data.name || ''} onChange={(e) => setName(e.target.value)} />
-        </label>
-      )}
-
-      <label className="field">
-        <span>Tipo</span>
-        <select value={typeKey} onChange={(e) => setTypeKey(e.target.value)}>
-          {Object.values(isEdge ? EDGE_TYPES : NODE_TYPES).map((t) => (
-            <option key={t.key} value={t.key}>{t.label}</option>
-          ))}
-        </select>
-      </label>
-
-      {groupFields(fields).map(([group, items]) => (
-        <React.Fragment key={group}>
-          <div className="inspector__section">{group}</div>
-          {items.map((f) => (
-            <FieldEditor key={f.key} field={f} value={meta[f.key]} onChange={(v) => setMeta(f.key, v)} />
-          ))}
-        </React.Fragment>
-      ))}
-
-      <div className="inspector__section">Campi comuni</div>
-      {COMMON_ENTITY_FIELDS.map((f) => (
-        <FieldEditor key={f.key} field={f} value={meta[f.key]} onChange={(v) => setMeta(f.key, v)} />
-      ))}
-
-      {extraKeys.length > 0 && <div className="inspector__section">Campi personalizzati</div>}
-      {extraKeys.map((k) => (
-        <FieldEditor key={k} field={{ key: k, label: k, type: 'text' }}
-          value={meta[k]} onChange={(v) => setMeta(k, v)} />
-      ))}
-
-      {!isEdge && typeKey === 'process' && onEnter && (
-        <button className="btn btn--enter" onClick={onEnter}>
-          ⤵ {entity.data.frameId ? 'Apri decomposizione' : 'Crea sotto-diagramma'}
-        </button>
-      )}
-
-      <div className="inspector__addfield">
-        <input placeholder="nuovo_campo" value={newKey}
-          onChange={(e) => setNewKey(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && addField()} />
-        <button onClick={addField}>+ Aggiungi campo</button>
+      <div className="inspector__section">Input → Output (IDEF0)</div>
+      <div className="io">
+        <div><div className="io__h">Input</div>
+          {op.inputs?.length ? op.inputs.map((r, i) => <div key={i} className="io__row">🧩 {compLabel(r.componentId)} <em>{r.qty} {r.uom}</em></div>) : <em>—</em>}</div>
+        <div><div className="io__h">Output</div>
+          {op.outputs?.length ? op.outputs.map((r, i) => <div key={i} className="io__row">🧩 {compLabel(r.componentId)} <em>{r.qty} {r.uom}</em></div>) : <em>—</em>}</div>
       </div>
 
-      <button className="btn btn--danger" onClick={() => onDelete(selection)}>
-        Elimina {isEdge ? 'collegamento' : 'nodo'}
-      </button>
+      <div className="inspector__section">Risorse (IDEF0 Mechanism)</div>
+      <div className="reflinks">
+        {chip('equipment', op.equipmentId)}
+        {chip('area', op.areaId)}
+        {(op.operatorIds || []).map((id) => <React.Fragment key={id}>{chip('operator', id)}</React.Fragment>)}
+      </div>
+      {(op.tooling || []).length > 0 && <>
+        <div className="inspector__subsection">Attrezzature</div>
+        {op.tooling.map((t, i) => (
+          <div key={i} className="tool">
+            {chip('tooling', t.toolingId)}
+            {(t.serials || []).length > 0 && <div className="serials">Seriali: {t.serials.join(', ')}</div>}
+          </div>
+        ))}
+      </>}
+
+      <div className="inspector__section">Parametri</div>
+      {OPERATION_FIELDS.filter((f) => op.meta?.[f.key] !== undefined && op.meta[f.key] !== '').map((f) => (
+        <div className="kv" key={f.key}><span>{f.label}</span><b>{String(op.meta[f.key])}</b></div>
+      ))}
+
+      <button className="btn btn--primary" style={{ width: '100%', marginTop: 14 }} onClick={() => onEdit(op.id)}>✎ Modifica operazione</button>
+      <button className="btn btn--danger" onClick={() => onDelete(op.id)}>Elimina operazione</button>
     </aside>
   );
 }
 
-/** Raggruppa i campi per la proprietà `group` mantenendone l'ordine. */
-function groupFields(fields) {
-  const order = [];
-  const map = new Map();
-  for (const f of fields) {
-    const g = f.group || 'Campi standard';
-    if (!map.has(g)) { map.set(g, []); order.push(g); }
-    map.get(g).push(f);
-  }
-  return order.map((g) => [g, map.get(g)]);
+function EntityInspector({ kind, id, model, onChange, onDelete }) {
+  const def = ENTITY_DEFS[kind];
+  const entity = getEntity(model, kind, id);
+  if (!entity) return <aside className="inspector inspector--empty"><p>Entità non trovata.</p></aside>;
+  const meta = entity.meta || {};
+  const setMeta = (k, v) => onChange(kind, id, { meta: { ...meta, [k]: v } });
+  const groups = def.fields.reduce((m, f) => { (m[f.group] ??= []).push(f); return m; }, {});
+
+  return (
+    <aside className="inspector">
+      <div className="inspector__head" style={{ '--node-color': def.color }}>
+        <span className="inspector__badge">{def.short}</span>
+        <strong>{entityLabel(entity)}</strong>
+        <small className="inspector__std">📚 {def.standard}</small>
+      </div>
+      <label className="field"><span>Nome</span>
+        <input value={entity.name || ''} onChange={(e) => onChange(kind, id, { name: e.target.value })} /></label>
+      {Object.entries(groups).map(([g, fields]) => (
+        <React.Fragment key={g}>
+          <div className="inspector__section">{g}</div>
+          {fields.map((f) => <FieldEditor key={f.key} field={f} value={meta[f.key]} onChange={(v) => setMeta(f.key, v)} />)}
+        </React.Fragment>
+      ))}
+      <button className="btn btn--danger" onClick={() => onDelete(kind, id)}>Elimina {def.short.toLowerCase()}</button>
+    </aside>
+  );
 }
 
 function FieldEditor({ field, value, onChange }) {
   const v = value ?? '';
-  if (field.type === 'textarea') {
-    return (
-      <label className="field">
-        <span>{field.label}</span>
-        <textarea value={v} onChange={(e) => onChange(e.target.value)} rows={2} />
-      </label>
-    );
-  }
-  if (field.type === 'select') {
-    return (
-      <label className="field">
-        <span>{field.label}</span>
-        <select value={v} onChange={(e) => onChange(e.target.value)}>
-          <option value="">—</option>
-          {field.options.map((o) => <option key={o} value={o}>{o}</option>)}
-        </select>
-      </label>
-    );
-  }
-  if (field.type === 'boolean') {
-    return (
-      <label className="field field--inline">
-        <input type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked)} />
-        <span>{field.label}</span>
-      </label>
-    );
-  }
-  return (
-    <label className="field">
-      <span>{field.label}</span>
-      <input type={field.type === 'number' ? 'number' : 'text'} value={v}
-        onChange={(e) => onChange(field.type === 'number'
-          ? (e.target.value === '' ? '' : Number(e.target.value))
-          : e.target.value)} />
-    </label>
-  );
+  if (field.type === 'textarea')
+    return <label className="field"><span>{field.label}</span><textarea rows={2} value={v} onChange={(e) => onChange(e.target.value)} /></label>;
+  if (field.type === 'list')
+    return <label className="field"><span>{field.label}</span>
+      <textarea rows={2} value={Array.isArray(value) ? value.join('\n') : v}
+        onChange={(e) => onChange(e.target.value.split('\n').map((s) => s.trim()).filter(Boolean))} /></label>;
+  if (field.type === 'select')
+    return <label className="field"><span>{field.label}</span>
+      <select value={v} onChange={(e) => onChange(e.target.value)}>
+        <option value="">—</option>{field.options.map((o) => <option key={o} value={o}>{o}</option>)}
+      </select></label>;
+  if (field.type === 'boolean')
+    return <label className="field field--inline"><input type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked)} /><span>{field.label}</span></label>;
+  return <label className="field"><span>{field.label}</span>
+    <input type={field.type === 'number' ? 'number' : 'text'} value={v}
+      onChange={(e) => onChange(field.type === 'number' ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value)} /></label>;
 }

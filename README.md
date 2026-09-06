@@ -38,6 +38,8 @@ verificabili, così resta interoperabile pur essendo totalmente estendibile:
 | Gerarchia asset: Area / Work Center / Work Unit; categorie di risorsa (Personnel, Equipment, Physical Asset, Material) | **ISA-95 / IEC 62264-1**, "Enterprise-control system integration", modelli di equipment e resource |
 | Flusso di sequenza, gateway, task | **BPMN 2.0** — *OMG / ISO/IEC 19510* |
 | Distinta base (component → assembly) sull'arco `assembly` | Bill of Materials (BOM) |
+| KPI di manufacturing: yield, scrap ratio, difettosità (ppm) | **ISO 22400-2** "Key performance indicators for manufacturing operations management" |
+| Tempi Lean: cycle time, takt, setup/changeover, WIP | Value Stream Mapping / Lean manufacturing |
 
 ### Tipi di nodo
 `process` · `component` · `equipment` (impianto) · `tooling` (attrezzatura) · `area`

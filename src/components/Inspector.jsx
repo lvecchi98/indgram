@@ -70,9 +70,13 @@ export default function Inspector({ selection, onChange, onDelete, onEnter }) {
         </select>
       </label>
 
-      <div className="inspector__section">Campi standard</div>
-      {fields.map((f) => (
-        <FieldEditor key={f.key} field={f} value={meta[f.key]} onChange={(v) => setMeta(f.key, v)} />
+      {groupFields(fields).map(([group, items]) => (
+        <React.Fragment key={group}>
+          <div className="inspector__section">{group}</div>
+          {items.map((f) => (
+            <FieldEditor key={f.key} field={f} value={meta[f.key]} onChange={(v) => setMeta(f.key, v)} />
+          ))}
+        </React.Fragment>
       ))}
 
       <div className="inspector__section">Campi comuni</div>
@@ -104,6 +108,18 @@ export default function Inspector({ selection, onChange, onDelete, onEnter }) {
       </button>
     </aside>
   );
+}
+
+/** Raggruppa i campi per la proprietà `group` mantenendone l'ordine. */
+function groupFields(fields) {
+  const order = [];
+  const map = new Map();
+  for (const f of fields) {
+    const g = f.group || 'Campi standard';
+    if (!map.has(g)) { map.set(g, []); order.push(g); }
+    map.get(g).push(f);
+  }
+  return order.map((g) => [g, map.get(g)]);
 }
 
 function FieldEditor({ field, value, onChange }) {

@@ -47,17 +47,39 @@ export const NODE_TYPES = {
       mechanism: { side: 'bottom', label: 'Mechanism (risorse)' },
     },
     fields: [
-      { key: 'code', label: 'Codice processo', type: 'text' },
-      { key: 'processType', label: 'Tipo trasformazione', type: 'select',
+      // -- Identificazione --
+      { key: 'code', label: 'Codice processo', type: 'text', group: 'Identificazione' },
+      { key: 'processType', label: 'Tipo trasformazione', type: 'select', group: 'Identificazione',
         options: ['Taglio', 'Stampaggio', 'Laminazione', 'Incollaggio',
                   'Assemblaggio', 'Saldatura', 'Trattamento termico',
                   'Verniciatura', 'Controllo qualità', 'Altro'] },
-      { key: 'description', label: 'Descrizione', type: 'textarea' },
-      { key: 'cycleTime_s', label: 'Tempo ciclo [s]', type: 'number' },
-      { key: 'throughput_uh', label: 'Cadenza [pz/h]', type: 'number' },
-      { key: 'yield_pct', label: 'Resa / Yield [%]', type: 'number' },
-      { key: 'energy_kWh', label: 'Energia [kWh/pz]', type: 'number' },
-      { key: 'operators', label: 'N. operatori', type: 'number' },
+      { key: 'description', label: 'Descrizione', type: 'textarea', group: 'Identificazione' },
+
+      // -- Tempi (Lean / value stream) --
+      { key: 'cycleTime_s', label: 'Tempo ciclo C/T [s]', type: 'number', group: 'Tempi (Lean)' },
+      { key: 'taktTime_s', label: 'Takt time [s]', type: 'number', group: 'Tempi (Lean)' },
+      { key: 'setupTime_s', label: 'Setup / changeover C/O [s]', type: 'number', group: 'Tempi (Lean)' },
+      { key: 'waitTime_s', label: 'Tempo di attesa [s]', type: 'number', group: 'Tempi (Lean)' },
+      { key: 'wip_pcs', label: 'WIP [pz]', type: 'number', group: 'Tempi (Lean)' },
+      { key: 'throughput_uh', label: 'Cadenza [pz/h]', type: 'number', group: 'Tempi (Lean)' },
+      { key: 'operators', label: 'N. operatori', type: 'number', group: 'Tempi (Lean)' },
+
+      // -- Qualità / KPI (ISO 22400-2) --
+      { key: 'yield_pct', label: 'Resa / Yield [%]', type: 'number', group: 'Qualità (ISO 22400)' },
+      { key: 'scrapRatio_pct', label: 'Scrap ratio [%]', type: 'number', group: 'Qualità (ISO 22400)' },
+      { key: 'defect_ppm', label: 'Difettosità [ppm]', type: 'number', group: 'Qualità (ISO 22400)' },
+      { key: 'ctq', label: 'Caratteristica critica (CTQ)', type: 'text', group: 'Qualità (ISO 22400)' },
+      { key: 'controlParam', label: 'Parametro controllato', type: 'text', group: 'Qualità (ISO 22400)' },
+      { key: 'tolerance', label: 'Tolleranza', type: 'text', group: 'Qualità (ISO 22400)' },
+
+      // -- Costo --
+      { key: 'costPerPiece', label: 'Costo / pezzo [€]', type: 'number', group: 'Costo' },
+      { key: 'machineCostRate_h', label: 'Costo macchina [€/h]', type: 'number', group: 'Costo' },
+      { key: 'laborCostRate_h', label: 'Costo manodopera [€/h]', type: 'number', group: 'Costo' },
+      { key: 'costCenter', label: 'Centro di costo', type: 'text', group: 'Costo' },
+
+      // -- Risorse --
+      { key: 'energy_kWh', label: 'Energia [kWh/pz]', type: 'number', group: 'Risorse' },
     ],
   },
 
@@ -199,11 +221,20 @@ export const EDGE_TYPES = {
     animated: false,
     standard: 'Distinta base / BOM (component -> assembly)',
     fields: [
-      { key: 'qtyPer', label: 'Q.tà per assemblato', type: 'number' },
-      { key: 'joinMethod', label: 'Metodo di giunzione', type: 'select',
+      // -- BOM --
+      { key: 'qtyPer', label: 'Q.tà per assemblato', type: 'number', group: 'BOM' },
+      { key: 'joinMethod', label: 'Metodo di giunzione', type: 'select', group: 'BOM',
         options: ['Incollaggio', 'Saldatura', 'Avvitatura', 'Rivettatura',
                   'Incastro', 'Altro'] },
-      { key: 'critical', label: 'Giunzione critica', type: 'boolean' },
+      { key: 'critical', label: 'Giunzione critica', type: 'boolean', group: 'BOM' },
+      // -- Parametri di processo della giunzione --
+      { key: 'torque_Nm', label: 'Coppia di serraggio [N·m]', type: 'number', group: 'Parametri giunzione' },
+      { key: 'temp_C', label: 'Temperatura [°C]', type: 'number', group: 'Parametri giunzione' },
+      { key: 'time_s', label: 'Tempo [s]', type: 'number', group: 'Parametri giunzione' },
+      { key: 'force_N', label: 'Forza [N]', type: 'number', group: 'Parametri giunzione' },
+      { key: 'consumable', label: 'Adesivo / consumabile', type: 'text', group: 'Parametri giunzione' },
+      { key: 'consumableQty', label: 'Q.tà consumabile', type: 'text', group: 'Parametri giunzione' },
+      { key: 'standardRef', label: 'Norma di riferimento', type: 'text', group: 'Parametri giunzione' },
     ],
   },
   sequence: {

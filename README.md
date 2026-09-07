@@ -11,8 +11,26 @@ per componente, per impianto, per attrezzatura, per operatore, per area.
 npm install
 npm run dev      # http://localhost:5173
 npm run build    # build di produzione
-npm test         # verifica la logica di derivazione del grafo
+npm test         # verifica per codice della logica (grafo, metriche, progetti)
 ```
+
+## Salvataggio e progetti
+
+I dati si salvano **automaticamente nel browser** (`localStorage`, Web Storage
+API — MDN): il lavoro sopravvive a reload e chiusura del tab. Nella toolbar il
+menu 🗂 gestisce **più progetti** (nuovo, duplica, elimina, cambio rapido).
+
+`localStorage` è legato a **quel browser su quel computer** e non si sincronizza
+tra dispositivi: per spostare un processo su un altro PC usa **Esporta JSON** →
+**Importa JSON** (che lo carica come nuovo progetto).
+
+## Pubblicazione (GitHub Pages)
+
+Il workflow `.github/workflows/deploy.yml` compila e pubblica l'app a ogni push
+su `main`. Prerequisito una tantum: **Settings → Pages → Source = GitHub
+Actions**. URL risultante: `https://<utente>.github.io/indgram/`. Da lì è
+usabile da qualsiasi computer (anche Windows) con il solo browser, senza
+installare nulla.
 
 ## Concetto chiave: dati normalizzati, diagramma derivato
 

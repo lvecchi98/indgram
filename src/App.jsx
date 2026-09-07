@@ -17,6 +17,11 @@ import { ENTITY_DEFS, OPERATION_DEF, MODEL_VERSION, emptyModel, uid, getEntity, 
 import { graphForView } from './model/graph.js';
 import { layoutGraph } from './model/layout.js';
 import { sampleModel } from './data/sampleModel.js';
+import { loadStore, saveStore } from './model/storage.js';
+import {
+  ensureProject, currentProject, listProjects, upsertModel,
+  createProject, duplicateProject, deleteProject, selectProject,
+} from './model/projects.js';
 
 /** Costruisce nodi/archi React Flow (con layout e badge) per la vista. */
 function buildFlow(model, view, target) {
@@ -61,8 +66,17 @@ function opBadges(model, op) {
 }
 const codeOf = (model, kind, id) => getEntity(model, kind, id)?.meta?.code || getEntity(model, kind, id)?.name || '?';
 
+/** Carica lo store dal browser e garantisce almeno un progetto (seed esempio). */
+function initStore() {
+  const loaded = loadStore();
+  const seeded = ensureProject(loaded, sampleModel);
+  if (seeded !== loaded) saveStore(seeded);
+  return seeded;
+}
+
 export default function App() {
-  const [model, setModel] = useState(sampleModel);
+  const [store, setStore] = useState(initStore);
+  const [model, setModel] = useState(() => currentProject(store).model);
   const [view, setView] = useState('flow');
   const [target, setTarget] = useState('');
   const [selection, setSelection] = useState(null);
@@ -82,6 +96,43 @@ export default function App() {
 
   const onNodesChange = useCallback((c) => setRfNodes((n) => applyNodeChanges(c, n)), []);
   const onEdgesChange = useCallback((c) => setRfEdges((e) => applyEdgeChanges(c, e)), []);
+
+  // ---- Salvataggio automatico (debounce) nel browser ----
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setStore((s) => { const ns = upsertModel(s, s.currentId, model); saveStore(ns); return ns; });
+    }, 500);
+    return () => clearTimeout(t);
+  }, [model]);
+
+  // ---- Progetti ----
+  const persist = useCallback((ns) => { saveStore(ns); setStore(ns); }, []);
+  const resetUi = useCallback(() => { setSelection(null); setView('flow'); setTarget(''); }, []);
+
+  const switchProject = useCallback((id) => {
+    const target = store.projects[id];
+    if (!target || id === store.currentId) return;
+    persist(selectProject(upsertModel(store, store.currentId, model), id));
+    setModel(target.model); resetUi();
+  }, [store, model, persist, resetUi]);
+
+  const newProject = useCallback(() => {
+    const m = emptyModel('Nuovo processo');
+    persist(createProject(upsertModel(store, store.currentId, model), m));
+    setModel(m); resetUi();
+  }, [store, model, persist, resetUi]);
+
+  const duplicateCurrent = useCallback(() => {
+    const ns = duplicateProject(upsertModel(store, store.currentId, model), store.currentId);
+    persist(ns); setModel(currentProject(ns).model); resetUi();
+  }, [store, model, persist, resetUi]);
+
+  const deleteCurrent = useCallback(() => {
+    const p = currentProject(store);
+    if (!p || !confirm(`Eliminare il progetto "${p.name}"? L’azione non è reversibile.`)) return;
+    const ns = ensureProject(deleteProject(store, store.currentId), emptyModel('Nuovo processo'));
+    persist(ns); setModel(currentProject(ns).model); resetUi();
+  }, [store, persist, resetUi]);
 
   // ---- Entità ----
   const createEntity = useCallback((kind, name) => {
@@ -150,19 +201,30 @@ export default function App() {
     r.onload = () => { try {
       const parsed = JSON.parse(r.result);
       if (!parsed.entities || !parsed.operations) throw new Error('Struttura non riconosciuta');
-      setModel(parsed); setView('flow'); setTarget(''); setSelection(null);
+      if (!parsed.title) parsed.title = file.name.replace(/\.json$/i, '');
+      persist(createProject(upsertModel(store, store.currentId, model), parsed)); // importa come NUOVO progetto
+      setModel(parsed); resetUi();
     } catch (e) { alert('File non valido: ' + e.message); } };
     r.readAsText(file);
-  }, []);
+  }, [store, model, persist, resetUi]);
+
+  const loadSample = useCallback(() => {
+    const m = JSON.parse(JSON.stringify(sampleModel));
+    persist(createProject(upsertModel(store, store.currentId, model), m)); // esempio come NUOVO progetto
+    setModel(m); resetUi();
+  }, [store, model, persist, resetUi]);
 
   const onView = useCallback((v) => { setView(v); if (v === 'flow') setTarget(''); }, []);
 
   return (
     <div className="app">
       <Toolbar title={model.title} onTitle={(t) => setModel((m) => ({ ...m, title: t }))}
+        projects={listProjects(store)} currentId={store.currentId}
+        onSelectProject={switchProject} onNewProject={newProject}
+        onDuplicateProject={duplicateCurrent} onDeleteProject={deleteCurrent}
         onNewOperation={() => setForm({})} onExport={exportJson} onImport={importJson}
-        onLoadSample={() => { setModel(sampleModel); setView('flow'); setTarget(''); setSelection(null); }}
-        onClear={() => { if (confirm('Svuotare tutto?')) { setModel(emptyModel(model.title)); setSelection(null); } }} />
+        onLoadSample={loadSample}
+        onClear={() => { if (confirm('Svuotare il contenuto di questo progetto?')) { setModel(emptyModel(model.title)); setSelection(null); } }} />
 
       <div className="app__body">
         <RegistryPanel model={model} selection={selection} onSelect={selectRegistry} onCreate={createEntity} />

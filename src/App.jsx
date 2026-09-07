@@ -11,6 +11,7 @@ import Toolbar from './components/Toolbar.jsx';
 import ViewBar from './components/ViewBar.jsx';
 import RegistryPanel from './components/RegistryPanel.jsx';
 import OperationForm from './components/OperationForm.jsx';
+import SummaryPanel from './components/SummaryPanel.jsx';
 
 import { ENTITY_DEFS, OPERATION_DEF, MODEL_VERSION, emptyModel, uid, getEntity, entityLabel } from './model/model.js';
 import { graphForView } from './model/graph.js';
@@ -181,6 +182,7 @@ export default function App() {
                     nodeColor={(n) => n.type === 'operation' ? OPERATION_DEF.color : ENTITY_DEFS.component.color} />
                 </ReactFlow>}
           </div>
+          {!needsTarget(view, target) && <SummaryPanel model={model} view={view} target={target} />}
         </div>
 
         <Inspector selection={selection} model={model}

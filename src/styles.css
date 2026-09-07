@@ -121,4 +121,20 @@ body { background: var(--bg); color: var(--text); }
 .selchip { cursor: pointer; font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); background: #fff; }
 .selchip.is-on { background: #fce7f3; border-color: #f9a8d4; color: #be185d; font-weight: 600; }
 
+/* ---------- Summary panel (basso) ---------- */
+.summary { flex-shrink: 0; background: var(--panel); border-top: 1px solid var(--border); }
+.summary__head { display: flex; align-items: center; gap: 12px; width: 100%; cursor: pointer; border: none; background: none; padding: 8px 14px; font-size: 13px; color: var(--text); text-align: left; }
+.summary__head:hover { background: #f8fafc; }
+.summary__title { font-weight: 700; }
+.summary__count { color: var(--muted); font-size: 12px; }
+.summary__chev { margin-left: auto; color: var(--muted); }
+.summary__empty { padding: 4px 14px 14px; color: var(--muted); font-size: 12px; }
+.summary__tiles { display: flex; flex-wrap: wrap; gap: 10px; padding: 0 14px 14px; }
+.stat { flex: 1; min-width: 150px; border: 1px solid var(--border); border-radius: 9px; padding: 9px 12px; background: #f8fafc; }
+.stat--warn { border-color: #fed7aa; background: #fff7ed; }
+.stat__label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 700; }
+.stat__value { font-size: 19px; font-weight: 700; margin: 2px 0; }
+.stat--warn .stat__value { color: #c2410c; }
+.stat__sub { font-size: 10.5px; color: var(--muted); }
+
 @media (max-width: 900px) { .ports, .fgrid { grid-template-columns: 1fr; } }

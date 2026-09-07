@@ -43,6 +43,23 @@ form guidato e il flusso si **genera da solo**.
 | **Per attrezzatura** | Dove e come è impiegata un'attrezzatura (es. TL001) e i suoi seriali |
 | **Per operatore / area** | Operazioni svolte da un operatore o in un'area/reparto |
 
+## Pannello riepilogo
+
+Sotto il diagramma, un **riepilogo** aggrega le metriche delle operazioni
+della vista/target correnti (es. solo ciò che gira su JM010, o l'intera
+genealogia di C):
+
+- **Tempo ciclo totale** = Σ C/T e **collo di bottiglia** = max C/T
+  (Value Stream Mapping — Rother & Shook, *Learning to See*, LEI 1999;
+  Theory of Constraints — Goldratt, *The Goal*, 1984).
+- **Costo totale / pezzo** = Σ [ costo/pz + (C/T+setup)/3600 · (tariffa
+  macchina + tariffa manodopera · n. operatori) ] (activity-based per centro
+  di lavoro).
+- **Conteggi risorse** — impianti, attrezzature, operatori, aree *distinti* +
+  energia totale (inventario risorse ISA-95).
+
+I calcoli sono in `src/model/metrics.js`, verificati da test (`npm test`).
+
 ## Esempio incluso
 
 Riproduce il caso: **Componenti A e B** → carteggiatura manuale (operatore)
